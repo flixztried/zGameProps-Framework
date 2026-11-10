@@ -22,28 +22,29 @@ jobs:
       - name: Download Dependencies
         run: |
           mkdir -p libs
-          # Download dexlib2 and dependencies
           curl -sL https://repo1.maven.org/maven2/org/smali/dexlib2/2.5.2/dexlib2-2.5.2.jar -o libs/dexlib2.jar
           curl -sL https://repo1.maven.org/maven2/org/smali/util/2.5.2/util-2.5.2.jar -o libs/util.jar
           curl -sL https://repo1.maven.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar -o libs/guava.jar
-          # Download R8 (contains D8) from Google Cloud Storage
           curl -sL https://storage.googleapis.com/r8-releases/raw/8.5.35/r8.jar -o libs/r8.jar
-          # Download Apktool
           curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o libs/apktool.jar
 
       - name: Compile Patcher and Smali Payload
         run: |
+          # Dynamically find the android.jar to avoid hardcoding the version
+          ANDROID_JAR=$(find $ANDROID_HOME/platforms -name "android.jar" | sort -V | tail -n 1)
+          echo "Using Android Jar: $ANDROID_JAR"
+
           # 1. Compile GamesPropsUtils.java to DEX
           mkdir -p src/io/mesalabs/unica
           cp src/GamesPropsUtils.java src/io/mesalabs/unica/
-          javac -cp libs/guava.jar src/io/mesalabs/unica/GamesPropsUtils.java
+          javac -cp "$ANDROID_JAR:libs/guava.jar" src/io/mesalabs/unica/GamesPropsUtils.java
           
           # 2. Compile Patcher.java
-          javac -cp libs/dexlib2.jar:libs/util.jar:libs/guava.jar src/com/zgameprops/Patcher.java
+          javac -cp "$ANDROID_JAR:libs/dexlib2.jar:libs/util.jar:libs/guava.jar" src/com/zgameprops/Patcher.java
           
-          # 3. Convert to DEX using D8 (from r8.jar)
+          # 3. Convert to DEX using D8
           java -cp libs/r8.jar com.android.tools.r8.D8 \
-            --lib $ANDROID_HOME/platforms/android-34/android.jar \
+            --lib "$ANDROID_JAR" \
             --output . \
             src/com/zgameprops/Patcher.class \
             src/io/mesalabs/unica/GamesPropsUtils.class
