@@ -27,7 +27,7 @@ jobs:
           curl -sL https://repo1.maven.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar -o libs/guava.jar
           curl -sL https://storage.googleapis.com/r8-releases/raw/8.5.35/r8.jar -o libs/r8.jar
 
-      - name: Compile Patcher and Smali Payload
+      - name: Compile Patcher and Dependencies
         run: |
           ANDROID_JAR=$(find $ANDROID_HOME/platforms -name "android.jar" | sort -V | tail -n 1)
           echo "Using Android Jar: $ANDROID_JAR"
@@ -40,16 +40,20 @@ jobs:
           # 2. Compile Patcher.java
           javac -cp "$ANDROID_JAR:libs/dexlib2.jar:libs/util.jar:libs/guava.jar" src/com/zgameprops/Patcher.java
           
-          # 3. Convert to DEX using D8
+          # 3. Convert to DEX using D8, bundling all dependencies into patcher.jar
           java -cp libs/r8.jar com.android.tools.r8.D8 \
             --lib "$ANDROID_JAR" \
-            --output . \
+            --min-api 26 \
+            --output patcher.jar \
             src/com/zgameprops/Patcher.class \
-            src/io/mesalabs/unica/GamesPropsUtils.class
+            src/io/mesalabs/unica/GamesPropsUtils.class \
+            libs/dexlib2.jar \
+            libs/util.jar \
+            libs/guava.jar
             
-          # 4. Prepare module directory (No apktool)
+          # 4. Prepare module directory
           mkdir -p module/system/framework
-          cp classes.dex module/patcher.dex
+          cp patcher.jar module/patcher.jar
 
       - name: Package Magisk Module
         run: |
