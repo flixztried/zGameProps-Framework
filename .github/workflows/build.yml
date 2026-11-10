@@ -1,0 +1,66 @@
+name: Build zGameProps Framework Patcher
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download Dependencies
+        run: |
+          mkdir -p libs
+          curl -sL https://repo1.maven.org/maven2/org/smali/dexlib2/2.5.2/dexlib2-2.5.2.jar -o libs/dexlib2.jar
+          curl -sL https://repo1.maven.org/maven2/org/smali/util/2.5.2/util-2.5.2.jar -o libs/util.jar
+          curl -sL https://repo1.maven.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar -o libs/guava.jar
+          curl -sL https://android.googlesource.com/platform/tools/base/+/mirror-goog-studio-main/build-system/d8/lib/d8.jar?format=TEXT | base64 -d > libs/d8.jar
+          curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o libs/apktool.jar
+
+      - name: Compile Patcher and Smali Payload
+        run: |
+          # 1. Compile GamesPropsUtils.java to DEX
+          mkdir -p src/io/mesalabs/unica
+          cp src/GamesPropsUtils.java src/io/mesalabs/unica/
+          javac -cp libs/guava.jar src/io/mesalabs/unica/GamesPropsUtils.java
+          
+          # 2. Compile Patcher.java
+          javac -cp libs/dexlib2.jar:libs/util.jar:libs/guava.jar src/com/zgameprops/Patcher.java
+          
+          # 3. Convert to DEX using d8
+          java -cp libs/d8.jar com.android.tools.r8.D8 \
+            --lib $ANDROID_HOME/platforms/android-34/android.jar \
+            --output . \
+            src/com/zgameprops/Patcher.class \
+            src/io/mesalabs/unica/GamesPropsUtils.class
+            
+          # 4. Prepare module directory
+          mkdir -p module/system/framework
+          cp classes.dex module/patcher.dex
+          cp libs/apktool.jar module/apktool.jar
+
+      - name: Package Magisk Module
+        run: |
+          cd module
+          cp ../module.prop .
+          cp ../customize.sh .
+          cp ../uninstall.sh .
+          cp ../post-fs-data.sh .
+          zip -r ../zGameProps-Framework.zip .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zGameProps-Framework
+          path: zGameProps-Framework.zip

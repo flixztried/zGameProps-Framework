@@ -1,0 +1,6 @@
+id=zgameprops-framework
+name=zGameProps Framework Patcher
+version=1.0.0
+versionCode=1
+author=flixztried
+description=On-the-fly systemless framework.jar patcher for GamesPropsUtils.
