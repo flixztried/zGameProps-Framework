@@ -15,6 +15,9 @@ log_msg() {
 FRAMEWORK_JAR="/system/framework/framework.jar"
 BACKUP_DIR="/data/adb/zgameprops_framework_backup"
 WORK_JAR="/data/local/tmp/framework_work.jar"
+WORK_JAR_OUT="/data/local/tmp/framework_patched.jar"
+PATCHER_JAR="/data/local/tmp/patcher.jar"
+OUT_DIR="$MODPATH/system/framework"
 
 log_msg "- zGameProps Framework Patcher"
 log_msg "- Checking prerequisites..."
@@ -33,22 +36,34 @@ else
     log_msg "  Backup already exists."
 fi
 
-log_msg "- Patching framework.jar on the fly..."
+log_msg "- Preparing environment..."
+mkdir -p "$OUT_DIR"
+cp "$MODPATH/patcher.jar" "$PATCHER_JAR"
 cp "$FRAMEWORK_JAR" "$WORK_JAR"
+chmod 777 "$PATCHER_JAR" "$WORK_JAR"
 
 log_msg "- Starting app_process..."
-export CLASSPATH="$MODPATH/patcher.jar"
+export CLASSPATH="$PATCHER_JAR"
 
-# Capture all output from the patcher
-app_process -J-Xmx1024m /system/bin com.zgameprops.Patcher "$WORK_JAR" "$MODPATH/system/framework/framework.jar" >> "$LOG_FILE" 2>&1
+# Run without -J memory limit first to see if it's the flag crashing it.
+# Also redirect all output directly to the log.
+app_process /system/bin com.zgameprops.Patcher "$WORK_JAR" "$WORK_JAR_OUT" >> "$LOG_FILE" 2>&1
 PATCH_RESULT=$?
 
 if [ $PATCH_RESULT -ne 0 ]; then
     log_msg "! Patching failed with exit code $PATCH_RESULT."
-    rm -f "$MODPATH/system/framework/framework.jar"
-    rm -f "$WORK_JAR"
+    
+    # Dump SELinux denials to see if APatch is blocking us
+    log_msg "- Dumping SELinux avc denials..."
+    dmesg | grep avc >> "$LOG_FILE" 2>&1
+    
+    # Dump logcat for our process if it crashed
+    logcat -d -s zGameProps >> "$LOG_FILE" 2>&1
+    
+    rm -f "$PATCHER_JAR" "$WORK_JAR" "$WORK_JAR_OUT"
     abort "! Aborted to prevent bootloop."
 fi
 
 log_msg "- Patching successful! Reboot to apply."
-rm -f "$WORK_JAR"
+mv "$WORK_JAR_OUT" "$OUT_DIR/framework.jar"
+rm -f "$PATCHER_JAR" "$WORK_JAR"
