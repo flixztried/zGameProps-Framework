@@ -26,11 +26,9 @@ jobs:
           curl -sL https://repo1.maven.org/maven2/org/smali/util/2.5.2/util-2.5.2.jar -o libs/util.jar
           curl -sL https://repo1.maven.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar -o libs/guava.jar
           curl -sL https://storage.googleapis.com/r8-releases/raw/8.5.35/r8.jar -o libs/r8.jar
-          curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o libs/apktool.jar
 
       - name: Compile Patcher and Smali Payload
         run: |
-          # Dynamically find the android.jar to avoid hardcoding the version
           ANDROID_JAR=$(find $ANDROID_HOME/platforms -name "android.jar" | sort -V | tail -n 1)
           echo "Using Android Jar: $ANDROID_JAR"
 
@@ -49,10 +47,9 @@ jobs:
             src/com/zgameprops/Patcher.class \
             src/io/mesalabs/unica/GamesPropsUtils.class
             
-          # 4. Prepare module directory
+          # 4. Prepare module directory (No apktool)
           mkdir -p module/system/framework
           cp classes.dex module/patcher.dex
-          cp libs/apktool.jar module/apktool.jar
 
       - name: Package Magisk Module
         run: |

@@ -21,7 +21,7 @@ fi
 ui_print "- Patching framework.jar on the fly..."
 cp "$FRAMEWORK_JAR" "$WORK_JAR"
 
-# Execute Java code via app_process
+# Execute Patcher.dex natively via app_process (no Java required)
 CLASSPATH="$MODPATH/patcher.dex" app_process /system/bin com.zgameprops.Patcher "$WORK_JAR" "$MODPATH/system/framework/framework.jar"
 
 if [ $? -ne 0 ]; then

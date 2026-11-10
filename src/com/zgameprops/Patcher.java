@@ -1,14 +1,17 @@
 package com.zgameprops;
 
 import org.jf.dexlib2.DexFileFactory;
+import org.jf.dexlib2.Opcode;
 import org.jf.dexlib2.Opcodes;
 import org.jf.dexlib2.iface.ClassDef;
 import org.jf.dexlib2.iface.Method;
 import org.jf.dexlib2.iface.instruction.Instruction;
+import org.jf.dexlib2.immutable.ImmutableClassDef;
 import org.jf.dexlib2.immutable.ImmutableMethod;
 import org.jf.dexlib2.immutable.ImmutableMethodImplementation;
 import org.jf.dexlib2.immutable.instruction.ImmutableInstruction35c;
 import org.jf.dexlib2.immutable.reference.ImmutableMethodReference;
+import org.jf.dexlib2.writer.io.FileDataStore;
 import org.jf.dexlib2.writer.pool.DexPool;
 
 import java.io.File;
@@ -46,23 +49,33 @@ public class Patcher {
                             newMethods.add(method);
                         }
                     }
-                    dexPool.internClass(org.jf.dexlib2.immutable.ImmutableClassDef.of(classDef, newMethods));
+                    
+                    ImmutableClassDef newClassDef = new ImmutableClassDef(
+                        classDef.getType(),
+                        classDef.getAccessFlags(),
+                        classDef.getSuperclass(),
+                        classDef.getInterfaces(),
+                        classDef.getSourceFile(),
+                        classDef.getAnnotations(),
+                        classDef.getFields(),
+                        newMethods
+                    );
+                    dexPool.internClass(newClassDef);
                 } else {
                     dexPool.internClass(classDef);
                 }
             }
             
             // Inject GamesPropsUtils class
-            org.jf.dexlib2.iface.MultiDexContainer.DexEntry utilsEntry = 
-                DexFileFactory.loadDexEntry(new File("classes.dex"), true, Opcodes.forApi(34));
-            for (ClassDef classDef : utilsEntry.getDexFile().getClasses()) {
+            org.jf.dexlib2.iface.DexFile utilsFile = 
+                DexFileFactory.loadDexFile(new File("classes.dex"), Opcodes.forApi(34));
+            for (ClassDef classDef : utilsFile.getClasses()) {
                 dexPool.internClass(classDef);
             }
 
             File outDex = new File("patched.dex");
-            FileOutputStream fos = new FileOutputStream(outDex);
-            dexPool.writeTo(fos);
-            fos.close();
+            FileDataStore outStore = new FileDataStore(outDex);
+            dexPool.writeTo(outStore);
             zipFile.close();
 
             // Rebuild Jar
@@ -101,13 +114,9 @@ public class Patcher {
             newInstructions.add(insts.get(i));
         }
         
-        // Invoke static
-        newInstructions.add(new ImmutableInstruction35c(0x71, 1, reg, 0, 0, 0, 0, setProps));
-        
-        // Add return
+        newInstructions.add(new ImmutableInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
         newInstructions.add(insts.get(insts.size() - 1));
 
-        // FIX: Pass the annotations and hiddenApiRestrictions from the original method
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),
