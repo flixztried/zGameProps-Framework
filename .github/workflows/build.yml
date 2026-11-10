@@ -22,10 +22,13 @@ jobs:
       - name: Download Dependencies
         run: |
           mkdir -p libs
+          # Download dexlib2 and dependencies
           curl -sL https://repo1.maven.org/maven2/org/smali/dexlib2/2.5.2/dexlib2-2.5.2.jar -o libs/dexlib2.jar
           curl -sL https://repo1.maven.org/maven2/org/smali/util/2.5.2/util-2.5.2.jar -o libs/util.jar
           curl -sL https://repo1.maven.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar -o libs/guava.jar
-          curl -sL https://android.googlesource.com/platform/tools/base/+/mirror-goog-studio-main/build-system/d8/lib/d8.jar?format=TEXT | base64 -d > libs/d8.jar
+          # Download R8 (contains D8) from Google Cloud Storage
+          curl -sL https://storage.googleapis.com/r8-releases/raw/8.5.35/r8.jar -o libs/r8.jar
+          # Download Apktool
           curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o libs/apktool.jar
 
       - name: Compile Patcher and Smali Payload
@@ -38,8 +41,8 @@ jobs:
           # 2. Compile Patcher.java
           javac -cp libs/dexlib2.jar:libs/util.jar:libs/guava.jar src/com/zgameprops/Patcher.java
           
-          # 3. Convert to DEX using d8
-          java -cp libs/d8.jar com.android.tools.r8.D8 \
+          # 3. Convert to DEX using D8 (from r8.jar)
+          java -cp libs/r8.jar com.android.tools.r8.D8 \
             --lib $ANDROID_HOME/platforms/android-34/android.jar \
             --output . \
             src/com/zgameprops/Patcher.class \
