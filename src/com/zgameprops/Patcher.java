@@ -78,22 +78,8 @@ public class Patcher {
 
     static class PatchedClass implements ClassDef {
         private final ClassDef base;
-        private final List<Method> directMethods = new ArrayList<>();
-        private final List<Method> virtualMethods = new ArrayList<>();
 
-        PatchedClass(ClassDef base) {
-            this.base = base;
-            for (Method m : base.getDirectMethods()) {
-                directMethods.add(m);
-            }
-            for (Method m : base.getVirtualMethods()) {
-                if (m.getName().equals("newApplication")) {
-                    virtualMethods.add(createPatchedMethod(m));
-                } else {
-                    virtualMethods.add(m);
-                }
-            }
-        }
+        PatchedClass(ClassDef base) { this.base = base; }
 
         @Override public String getType() { return base.getType(); }
         @Override public int getAccessFlags() { return base.getAccessFlags(); }
@@ -103,9 +89,35 @@ public class Patcher {
         @Override public Set<? extends Annotation> getAnnotations() { return base.getAnnotations(); }
         @Override public Iterable<? extends Field> getStaticFields() { return base.getStaticFields(); }
         @Override public Iterable<? extends Field> getInstanceFields() { return base.getInstanceFields(); }
-        @Override public Iterable<? extends Method> getDirectMethods() { return directMethods; }
-        @Override public Iterable<? extends Method> getVirtualMethods() { return virtualMethods; }
-        @Override public int compareTo(ClassDef o) { return base.getType().compareTo(o.getType()); }
+        
+        @Override
+        public Iterable<? extends Method> getDirectMethods() { return base.getDirectMethods(); }
+
+        @Override
+        public Iterable<? extends Method> getVirtualMethods() {
+            List<Method> newMethods = new ArrayList<>();
+            for (Method m : base.getVirtualMethods()) {
+                if (m.getName().equals("newApplication")) {
+                    newMethods.add(createPatchedMethod(m));
+                } else {
+                    newMethods.add(m);
+                }
+            }
+            return newMethods;
+        }
+
+        @Override
+        public Iterable<? extends Method> getMethods() {
+            List<Method> newMethods = new ArrayList<>();
+            for (Method m : base.getMethods()) {
+                if (m.getName().equals("newApplication")) {
+                    newMethods.add(createPatchedMethod(m));
+                } else {
+                    newMethods.add(m);
+                }
+            }
+            return newMethods;
+        }
     }
 
     private static Method createPatchedMethod(Method method) {
@@ -133,10 +145,12 @@ public class Patcher {
         newInstructions.add(new ImmutableInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
         newInstructions.add(insts.get(insts.size() - 1));
 
+        // Use empty collections to bypass the dexlib2 hidden API parsing crash
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),
-            method.getAnnotations(), method.getHiddenApiRestrictions(),
+            Collections.emptySet(), 
+            Collections.emptySet(), 
             new ImmutableMethodImplementation(method.getImplementation().getRegisterCount(),
                 newInstructions, method.getImplementation().getTryBlocks(),
                 method.getImplementation().getDebugItems())
