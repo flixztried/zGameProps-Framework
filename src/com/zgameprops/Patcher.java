@@ -5,8 +5,9 @@ import org.jf.dexlib2.Opcode;
 import org.jf.dexlib2.Opcodes;
 import org.jf.dexlib2.iface.ClassDef;
 import org.jf.dexlib2.iface.Method;
+import org.jf.dexlib2.iface.Field;
+import org.jf.dexlib2.iface.Annotation;
 import org.jf.dexlib2.iface.instruction.Instruction;
-import org.jf.dexlib2.immutable.ImmutableClassDef;
 import org.jf.dexlib2.immutable.ImmutableMethod;
 import org.jf.dexlib2.immutable.ImmutableMethodImplementation;
 import org.jf.dexlib2.immutable.instruction.ImmutableInstruction35c;
@@ -17,6 +18,8 @@ import org.jf.dexlib2.writer.pool.DexPool;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.Collections;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -41,26 +44,7 @@ public class Patcher {
 
             for (ClassDef classDef : dexEntryObj.getDexFile().getClasses()) {
                 if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
-                    List<Method> newMethods = new ArrayList<>();
-                    for (Method method : classDef.getMethods()) {
-                        if (method.getName().equals("newApplication")) {
-                            newMethods.add(createPatchedMethod(method));
-                        } else {
-                            newMethods.add(method);
-                        }
-                    }
-                    
-                    ImmutableClassDef newClassDef = new ImmutableClassDef(
-                        classDef.getType(),
-                        classDef.getAccessFlags(),
-                        classDef.getSuperclass(),
-                        classDef.getInterfaces(),
-                        classDef.getSourceFile(),
-                        classDef.getAnnotations(),
-                        classDef.getFields(),
-                        newMethods
-                    );
-                    dexPool.internClass(newClassDef);
+                    dexPool.internClass(new PatchedClass(classDef));
                 } else {
                     dexPool.internClass(classDef);
                 }
@@ -90,6 +74,38 @@ public class Patcher {
             e.printStackTrace();
             System.exit(1);
         }
+    }
+
+    static class PatchedClass implements ClassDef {
+        private final ClassDef base;
+        private final List<Method> directMethods = new ArrayList<>();
+        private final List<Method> virtualMethods = new ArrayList<>();
+
+        PatchedClass(ClassDef base) {
+            this.base = base;
+            for (Method m : base.getDirectMethods()) {
+                directMethods.add(m);
+            }
+            for (Method m : base.getVirtualMethods()) {
+                if (m.getName().equals("newApplication")) {
+                    virtualMethods.add(createPatchedMethod(m));
+                } else {
+                    virtualMethods.add(m);
+                }
+            }
+        }
+
+        @Override public String getType() { return base.getType(); }
+        @Override public int getAccessFlags() { return base.getAccessFlags(); }
+        @Override public String getSuperclass() { return base.getSuperclass(); }
+        @Override public List<String> getInterfaces() { return base.getInterfaces(); }
+        @Override public String getSourceFile() { return base.getSourceFile(); }
+        @Override public Set<? extends Annotation> getAnnotations() { return base.getAnnotations(); }
+        @Override public Iterable<? extends Field> getStaticFields() { return base.getStaticFields(); }
+        @Override public Iterable<? extends Field> getInstanceFields() { return base.getInstanceFields(); }
+        @Override public Iterable<? extends Method> getDirectMethods() { return directMethods; }
+        @Override public Iterable<? extends Method> getVirtualMethods() { return virtualMethods; }
+        @Override public int compareTo(ClassDef o) { return base.getType().compareTo(o.getType()); }
     }
 
     private static Method createPatchedMethod(Method method) {
