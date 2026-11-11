@@ -55,24 +55,17 @@ jobs:
         run: |
           mkdir -p module/system/framework
           mkdir -p module/META-INF/com/google/android
+          
           cp patcher.jar module/patcher.jar
           cp module.prop module/
           cp customize.sh module/
           cp uninstall.sh module/
           cp post-fs-data.sh module/
-
-          echo "#MAGISK" > module/META-INF/com/google/android/updater-script
-          cat > module/META-INF/com/google/android/update-binary <<'EOF'
-#!/sbin/sh
-umask 022
-OUTFD=$2
-ZIPFILE=$3
-MAGISKBIN=/data/adb/magisk
-mount -o rw,remount /data
-mkdir -p $MAGISKBIN
-unzip -o "$ZIPFILE" 'META-INF/*' -d /tmp >/dev/null 2>&1
-. /tmp/META-INF/com/google/android/update-binary
-EOF
+          
+          # Copy the pre-made installer files
+          cp META-INF/com/google/android/update-binary module/META-INF/com/google/android/
+          cp META-INF/com/google/android/updater-script module/META-INF/com/google/android/
+          
           chmod +x module/META-INF/com/google/android/update-binary
 
       - name: Package Module Zip
