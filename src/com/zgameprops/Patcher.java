@@ -1,22 +1,22 @@
 package com.zgameprops;
 
-import org.jf.dexlib2.AccessFlags;
-import org.jf.dexlib2.DexFileFactory;
-import org.jf.dexlib2.Opcode;
-import org.jf.dexlib2.Opcodes;
-import org.jf.dexlib2.base.reference.BaseTypeReference;
-import org.jf.dexlib2.builder.MutableMethodImplementation;
-import org.jf.dexlib2.builder.instruction.BuilderInstruction35c;
-import org.jf.dexlib2.builder.instruction.BuilderInstruction3rc;
-import org.jf.dexlib2.iface.ClassDef;
-import org.jf.dexlib2.iface.DexFile;
-import org.jf.dexlib2.iface.Field;
-import org.jf.dexlib2.iface.Method;
-import org.jf.dexlib2.immutable.ImmutableMethod;
-import org.jf.dexlib2.immutable.reference.ImmutableMethodReference;
-import org.jf.dexlib2.util.MethodUtil;
-import org.jf.dexlib2.writer.io.FileDataStore;
-import org.jf.dexlib2.writer.pool.DexPool;
+import com.android.tools.smali.dexlib2.AccessFlags;
+import com.android.tools.smali.dexlib2.DexFileFactory;
+import com.android.tools.smali.dexlib2.Opcode;
+import com.android.tools.smali.dexlib2.Opcodes;
+import com.android.tools.smali.dexlib2.base.reference.BaseTypeReference;
+import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation;
+import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction35c;
+import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction3rc;
+import com.android.tools.smali.dexlib2.iface.ClassDef;
+import com.android.tools.smali.dexlib2.iface.DexFile;
+import com.android.tools.smali.dexlib2.iface.Field;
+import com.android.tools.smali.dexlib2.iface.Method;
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod;
+import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference;
+import com.android.tools.smali.dexlib2.util.MethodUtil;
+import com.android.tools.smali.dexlib2.writer.io.FileDataStore;
+import com.android.tools.smali.dexlib2.writer.pool.DexPool;
 import com.google.common.collect.Iterables;
 
 import java.io.File;
@@ -47,7 +47,7 @@ public class Patcher {
             File outputJar = new File(outputJarPath);
             File tempOutDex = new File(outputJar.getParentFile(), "temp_patched.dex");
 
-            org.jf.dexlib2.iface.MultiDexContainer<? extends DexFile> container = 
+            com.android.tools.smali.dexlib2.iface.MultiDexContainer<? extends DexFile> container = 
                 DexFileFactory.loadDexContainer(inputJar, Opcodes.forApi(apiLevel));
 
             String targetDexEntry = null;
@@ -55,7 +55,7 @@ public class Patcher {
 
             for (String entryName : container.getDexEntryNames()) {
                 System.out.println("Found DEX entry: " + entryName);
-                org.jf.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = container.getEntry(entryName);
+                com.android.tools.smali.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = container.getEntry(entryName);
                 if (entry != null) {
                     for (ClassDef classDef : entry.getDexFile().getClasses()) {
                         if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
@@ -88,12 +88,12 @@ public class Patcher {
 
             String currentClassPath = System.getProperty("java.class.path");
             File currentJar = new File(currentClassPath);
-            org.jf.dexlib2.iface.MultiDexContainer<? extends DexFile> utilsContainer = 
+            com.android.tools.smali.dexlib2.iface.MultiDexContainer<? extends DexFile> utilsContainer = 
                 DexFileFactory.loadDexContainer(currentJar, Opcodes.forApi(apiLevel));
             
             int injectedCount = 0;
             for (String entryName : utilsContainer.getDexEntryNames()) {
-                org.jf.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = utilsContainer.getEntry(entryName);
+                com.android.tools.smali.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = utilsContainer.getEntry(entryName);
                 for (ClassDef classDef : entry.getDexFile().getClasses()) {
                     if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils")) {
                         dexPool.internClass(classDef);
@@ -106,7 +106,7 @@ public class Patcher {
             FileDataStore outStore = new FileDataStore(tempOutDex);
             dexPool.writeTo(outStore);
 
-            org.jf.dexlib2.iface.DexFile patchedFile = 
+            com.android.tools.smali.dexlib2.iface.DexFile patchedFile = 
                 DexFileFactory.loadDexFile(tempOutDex, Opcodes.forApi(apiLevel));
             int finalClassCount = 0;
             for (ClassDef ignored : patchedFile.getClasses()) {
@@ -159,7 +159,7 @@ public class Patcher {
         @Override public String getSuperclass() { return base.getSuperclass(); }
         @Override public List<String> getInterfaces() { return base.getInterfaces(); }
         @Override public String getSourceFile() { return base.getSourceFile(); }
-        @Override public Set<? extends org.jf.dexlib2.iface.Annotation> getAnnotations() { return base.getAnnotations(); }
+        @Override public Set<? extends com.android.tools.smali.dexlib2.iface.Annotation> getAnnotations() { return base.getAnnotations(); }
         @Override public Iterable<? extends Field> getFields() { return Iterables.concat(getStaticFields(), getInstanceFields()); }
         @Override public Iterable<? extends Field> getStaticFields() { return base.getStaticFields(); }
         @Override public Iterable<? extends Field> getInstanceFields() { return base.getInstanceFields(); }

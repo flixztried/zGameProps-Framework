@@ -8,12 +8,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class GamesPropsUtils {
-    private static final String TAG = "GamesPropsUtils";
+    private static final String TAG = "zGameProps";
     private static final Map<String, String[]> packagesToChange = new HashMap<>();
     private static final Map<String, Map<String, String>> propsToChange = new HashMap<>();
 
     static {
-        // Sample profile (Lenovo Y700)
+        // Sample profile (Lenovo Y700) - Keeping strictly to the 4 UN1CA fields
         Map<String, String> y700 = new HashMap<>();
         y700.put("BRAND", "Lenovo");
         y700.put("DEVICE", "TB-9707F");
@@ -58,6 +58,8 @@ public final class GamesPropsUtils {
             field.setAccessible(true);
             field.set(null, value);
             field.setAccessible(false);
+            // Log to confirm reflection works
+            Log.d(TAG, "Spoofed Build." + key + " = " + value);
         } catch (Exception e) {
             Log.e(TAG, "Failed to set " + key);
         }
