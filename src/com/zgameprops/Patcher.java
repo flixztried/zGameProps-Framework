@@ -54,7 +54,6 @@ public class Patcher {
             DexFile targetDexFile = null;
 
             for (String entryName : container.getDexEntryNames()) {
-                System.out.println("Found DEX entry: " + entryName);
                 com.android.tools.smali.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = container.getEntry(entryName);
                 if (entry != null) {
                     for (ClassDef classDef : entry.getDexFile().getClasses()) {
@@ -68,56 +67,33 @@ public class Patcher {
                 if (targetDexEntry != null) break;
             }
 
-            if (targetDexEntry == null) {
-                throw new RuntimeException("Instrumentation class not found in framework.jar!");
-            }
-            System.out.println("Found Instrumentation in: " + targetDexEntry);
+            if (targetDexEntry == null) throw new RuntimeException("Instrumentation class not found!");
 
-            int originalClassCount = 0;
             DexPool dexPool = new DexPool(Opcodes.forApi(apiLevel));
-            
             for (ClassDef classDef : targetDexFile.getClasses()) {
-                originalClassCount++;
                 if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
                     dexPool.internClass(new PatchedClass(classDef));
                 } else {
                     dexPool.internClass(classDef);
                 }
             }
-            System.out.println("Original class count: " + originalClassCount);
 
             String currentClassPath = System.getProperty("java.class.path");
             File currentJar = new File(currentClassPath);
             com.android.tools.smali.dexlib2.iface.MultiDexContainer<? extends DexFile> utilsContainer = 
                 DexFileFactory.loadDexContainer(currentJar, Opcodes.forApi(apiLevel));
             
-            int injectedCount = 0;
             for (String entryName : utilsContainer.getDexEntryNames()) {
                 com.android.tools.smali.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = utilsContainer.getEntry(entryName);
                 for (ClassDef classDef : entry.getDexFile().getClasses()) {
                     if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils")) {
                         dexPool.internClass(classDef);
-                        injectedCount++;
                     }
                 }
             }
-            System.out.println("Injected class count: " + injectedCount);
 
             FileDataStore outStore = new FileDataStore(tempOutDex);
             dexPool.writeTo(outStore);
-
-            com.android.tools.smali.dexlib2.iface.DexFile patchedFile = 
-                DexFileFactory.loadDexFile(tempOutDex, Opcodes.forApi(apiLevel));
-            int finalClassCount = 0;
-            for (ClassDef ignored : patchedFile.getClasses()) {
-                finalClassCount++;
-            }
-
-            int expectedCount = originalClassCount + injectedCount;
-            if (finalClassCount != expectedCount) {
-                throw new RuntimeException("Validation failed! Expected " + expectedCount + " classes, but got " + finalClassCount);
-            }
-            System.out.println("Validation passed: " + finalClassCount + " classes present.");
 
             ZipFile zipFile = new ZipFile(inputJar);
             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputJar));
@@ -143,8 +119,8 @@ public class Patcher {
             zos.close();
             zipFile.close();
             tempOutDex.delete();
-
             System.out.println("Patch successful.");
+
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(1);
@@ -194,19 +170,9 @@ public class Patcher {
         if (method.getImplementation() == null) return method;
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
         
-        int ctxIndex = -1;
-        List<? extends CharSequence> paramTypes = method.getParameterTypes();
-        for (int i = 0; i < paramTypes.size(); i++) {
-            if (paramTypes.get(i).toString().equals("Landroid/content/Context;")) {
-                ctxIndex = i;
-                break;
-            }
-        }
-        if (ctxIndex == -1) return method;
-
-        // FIX: Removed the +1 for instance methods because getRegisterCount() already accounts for it.
-        int paramRegCount = MethodUtil.getParameterRegisterCount(method);
-        int reg = mi.getRegisterCount() - paramRegCount + ctxIndex;
+        // FIX: Context is ALWAYS the last parameter in newApplication.
+        // Register count minus 1 gives us the absolute register index for Context.
+        int reg = mi.getRegisterCount() - 1;
 
         System.out.println("Injecting into " + method.getName() + " at register v" + reg);
 

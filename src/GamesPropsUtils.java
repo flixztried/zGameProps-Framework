@@ -13,7 +13,6 @@ public final class GamesPropsUtils {
     private static final Map<String, Map<String, String>> propsToChange = new HashMap<>();
 
     static {
-        // Sample profile (Lenovo Y700) - Keeping strictly to the 4 UN1CA fields
         Map<String, String> y700 = new HashMap<>();
         y700.put("BRAND", "Lenovo");
         y700.put("DEVICE", "TB-9707F");
@@ -32,23 +31,28 @@ public final class GamesPropsUtils {
     private GamesPropsUtils() {}
 
     public static void setProps(Context context) {
-        if (context == null) return;
-        String packageName = context.getPackageName();
-        if (packageName == null || packageName.isEmpty()) return;
+        // CRASH-PROOF: Catch Throwable so we NEVER bootloop the system.
+        try {
+            if (context == null) return;
+            String packageName = context.getPackageName();
+            if (packageName == null || packageName.isEmpty()) return;
 
-        for (Map.Entry<String, String[]> entry : packagesToChange.entrySet()) {
-            String profile = entry.getKey();
-            for (String pkg : entry.getValue()) {
-                if (pkg.equals(packageName)) {
-                    Map<String, String> props = propsToChange.get(profile);
-                    if (props != null) {
-                        for (Map.Entry<String, String> prop : props.entrySet()) {
-                            setPropValue(prop.getKey(), prop.getValue());
+            for (Map.Entry<String, String[]> entry : packagesToChange.entrySet()) {
+                String profile = entry.getKey();
+                for (String pkg : entry.getValue()) {
+                    if (pkg.equals(packageName)) {
+                        Map<String, String> props = propsToChange.get(profile);
+                        if (props != null) {
+                            for (Map.Entry<String, String> prop : props.entrySet()) {
+                                setPropValue(prop.getKey(), prop.getValue());
+                            }
                         }
+                        return;
                     }
-                    return;
                 }
             }
+        } catch (Throwable t) {
+            Log.e(TAG, "Fatal error in setProps: " + t.getMessage());
         }
     }
 
@@ -58,9 +62,8 @@ public final class GamesPropsUtils {
             field.setAccessible(true);
             field.set(null, value);
             field.setAccessible(false);
-            // Log to confirm reflection works
-            Log.d(TAG, "Spoofed Build." + key + " = " + value);
-        } catch (Exception e) {
+            Log.e(TAG, "Spoofed Build." + key + " = " + value);
+        } catch (Throwable t) {
             Log.e(TAG, "Failed to set " + key);
         }
     }
