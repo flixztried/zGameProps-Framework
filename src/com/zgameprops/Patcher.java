@@ -1,29 +1,36 @@
 package com.zgameprops;
 
+import org.jf.dexlib2.AccessFlags;
 import org.jf.dexlib2.DexFileFactory;
 import org.jf.dexlib2.Opcode;
 import org.jf.dexlib2.Opcodes;
+import org.jf.dexlib2.base.reference.BaseTypeReference;
+import org.jf.dexlib2.builder.MutableMethodImplementation;
+import org.jf.dexlib2.builder.instruction.BuilderInstruction35c;
+import org.jf.dexlib2.builder.instruction.BuilderInstruction3rc;
 import org.jf.dexlib2.iface.ClassDef;
-import org.jf.dexlib2.iface.Method;
+import org.jf.dexlib2.iface.DexFile;
 import org.jf.dexlib2.iface.Field;
-import org.jf.dexlib2.iface.Annotation;
-import org.jf.dexlib2.iface.instruction.Instruction;
+import org.jf.dexlib2.iface.Method;
 import org.jf.dexlib2.immutable.ImmutableMethod;
-import org.jf.dexlib2.immutable.ImmutableMethodImplementation;
-import org.jf.dexlib2.immutable.instruction.ImmutableInstruction35c;
 import org.jf.dexlib2.immutable.reference.ImmutableMethodReference;
+import org.jf.dexlib2.util.MethodUtil;
 import org.jf.dexlib2.writer.io.FileDataStore;
 import org.jf.dexlib2.writer.pool.DexPool;
+import com.google.common.collect.Iterables;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Set;
-import java.util.Collections;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
-import java.io.FileOutputStream;
 
 public class Patcher {
     public static void main(String[] args) {
@@ -36,38 +43,91 @@ public class Patcher {
 
         try {
             File inputJar = new File(inputJarPath);
-            ZipFile zipFile = new ZipFile(inputJar);
-            
-            DexPool dexPool = new DexPool(Opcodes.forApi(34));
-            org.jf.dexlib2.iface.MultiDexContainer.DexEntry dexEntryObj = 
-                DexFileFactory.loadDexEntry(inputJar, "classes.dex", true, Opcodes.forApi(34));
+            File outputJar = new File(outputJarPath);
+            File tempOutDex = new File(outputJar.getParentFile(), "temp_patched.dex");
 
-            for (ClassDef classDef : dexEntryObj.getDexFile().getClasses()) {
+            // 1. Load the entire DexContainer (handles multi-dex)
+            org.jf.dexlib2.iface.MultiDexContainer<? extends DexFile> container = 
+                DexFileFactory.loadDexContainer(inputJar, Opcodes.forApi(34));
+
+            String targetDexEntry = null;
+            DexFile targetDexFile = null;
+
+            // 2. Find which dex file contains Instrumentation
+            for (String entryName : container.getDexEntryNames()) {
+                org.jf.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = container.getEntry(entryName);
+                if (entry != null) {
+                    for (ClassDef classDef : entry.getDexFile().getClasses()) {
+                        if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
+                            targetDexEntry = entryName;
+                            targetDexFile = entry.getDexFile();
+                            break;
+                        }
+                    }
+                }
+                if (targetDexEntry != null) break;
+            }
+
+            if (targetDexEntry == null) {
+                System.out.println("Instrumentation class not found!");
+                System.exit(1);
+            }
+
+            // 3. Re-pool the modified DEX
+            DexPool dexPool = new DexPool(Opcodes.forApi(34));
+            for (ClassDef classDef : targetDexFile.getClasses()) {
                 if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
                     dexPool.internClass(new PatchedClass(classDef));
                 } else {
                     dexPool.internClass(classDef);
                 }
             }
+
+            // Inject GamesPropsUtils from our own JAR
+            String currentClassPath = System.getProperty("java.class.path");
+            File currentJar = new File(currentClassPath);
+            org.jf.dexlib2.iface.MultiDexContainer<? extends DexFile> utilsContainer = 
+                DexFileFactory.loadDexContainer(currentJar, Opcodes.forApi(34));
             
-            // Inject GamesPropsUtils class
-            org.jf.dexlib2.iface.DexFile utilsFile = 
-                DexFileFactory.loadDexFile(new File("classes.dex"), Opcodes.forApi(34));
-            for (ClassDef classDef : utilsFile.getClasses()) {
-                dexPool.internClass(classDef);
+            for (String entryName : utilsContainer.getDexEntryNames()) {
+                org.jf.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = utilsContainer.getEntry(entryName);
+                for (ClassDef classDef : entry.getDexFile().getClasses()) {
+                    if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils")) {
+                        dexPool.internClass(classDef);
+                    }
+                }
             }
 
-            File outDex = new File("patched.dex");
-            FileDataStore outStore = new FileDataStore(outDex);
+            FileDataStore outStore = new FileDataStore(tempOutDex);
             dexPool.writeTo(outStore);
-            zipFile.close();
 
-            // Rebuild Jar
-            ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputJarPath));
-            zos.putNextEntry(new ZipEntry("classes.dex"));
-            java.nio.file.Files.copy(outDex.toPath(), zos);
-            zos.closeEntry();
+            // 4. Rebuild the JAR: Copy all original entries, replacing only the target DEX
+            ZipFile zipFile = new ZipFile(inputJar);
+            ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputJar));
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                zos.putNextEntry(new ZipEntry(entry.getName()));
+                
+                if (entry.getName().equals(targetDexEntry)) {
+                    // Write our patched DEX
+                    java.nio.file.Files.copy(tempOutDex.toPath(), zos);
+                } else {
+                    // Copy original entry byte-for-byte
+                    InputStream is = zipFile.getInputStream(entry);
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = is.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
+                    }
+                    is.close();
+                }
+                zos.closeEntry();
+            }
             zos.close();
+            zipFile.close();
+            tempOutDex.delete();
 
             System.out.println("Patch successful.");
         } catch (Exception e) {
@@ -76,7 +136,8 @@ public class Patcher {
         }
     }
 
-    static class PatchedClass implements ClassDef {
+    // Extending BaseTypeReference avoids boilerplate
+    static class PatchedClass extends BaseTypeReference implements ClassDef {
         private final ClassDef base;
 
         PatchedClass(ClassDef base) { this.base = base; }
@@ -86,12 +147,15 @@ public class Patcher {
         @Override public String getSuperclass() { return base.getSuperclass(); }
         @Override public List<String> getInterfaces() { return base.getInterfaces(); }
         @Override public String getSourceFile() { return base.getSourceFile(); }
-        @Override public Set<? extends Annotation> getAnnotations() { return base.getAnnotations(); }
+        @Override public Set<? extends org.jf.dexlib2.iface.Annotation> getAnnotations() { return base.getAnnotations(); }
+        
+        @Override public Iterable<? extends Field> getFields() {
+            return Iterables.concat(getStaticFields(), getInstanceFields());
+        }
+
         @Override public Iterable<? extends Field> getStaticFields() { return base.getStaticFields(); }
         @Override public Iterable<? extends Field> getInstanceFields() { return base.getInstanceFields(); }
-        
-        @Override
-        public Iterable<? extends Method> getDirectMethods() { return base.getDirectMethods(); }
+        @Override public Iterable<? extends Method> getDirectMethods() { return base.getDirectMethods(); }
 
         @Override
         public Iterable<? extends Method> getVirtualMethods() {
@@ -122,38 +186,42 @@ public class Patcher {
 
     private static Method createPatchedMethod(Method method) {
         if (method.getImplementation() == null) return method;
-        List<Instruction> newInstructions = new ArrayList<>();
+
+        MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
         
-        List<Instruction> insts = new ArrayList<>();
-        for (Instruction i : method.getImplementation().getInstructions()) {
-            insts.add(i);
+        int ctxIndex = -1;
+        List<? extends CharSequence> paramTypes = method.getParameterTypes();
+        for (int i = 0; i < paramTypes.size(); i++) {
+            if (paramTypes.get(i).toString().equals("Landroid/content/Context;")) {
+                ctxIndex = i;
+                break;
+            }
         }
+
+        if (ctxIndex == -1) return method;
+
+        boolean isStatic = AccessFlags.STATIC.isSet(method.getAccessFlags());
+        int paramRegCount = MethodUtil.getParameterRegisterCount(method);
         
-        int reg = method.getParameterTypes().size() > 1 ? 3 : 1;
-        if (method.getParameterTypes().size() == 2) reg = 1;
-        else reg = 3;
+        // Calculate absolute register dynamically
+        int reg = mi.getRegisterCount() - paramRegCount + (isStatic ? 0 : 1) + ctxIndex;
 
         ImmutableMethodReference setProps = new ImmutableMethodReference(
             "Lio/mesalabs/unica/GamesPropsUtils;", "setProps",
-            java.util.Collections.singletonList("Landroid/content/Context;"), "V"
+            Collections.singletonList("Landroid/content/Context;"), "V"
         );
 
-        for (int i = 0; i < insts.size() - 1; i++) {
-            newInstructions.add(insts.get(i));
+        // Inject at index 0
+        if (reg <= 15) {
+            mi.addInstruction(0, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
+        } else {
+            mi.addInstruction(0, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
         }
-        
-        newInstructions.add(new ImmutableInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
-        newInstructions.add(insts.get(insts.size() - 1));
 
-        // Use empty collections to bypass the dexlib2 hidden API parsing crash
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),
-            Collections.emptySet(), 
-            Collections.emptySet(), 
-            new ImmutableMethodImplementation(method.getImplementation().getRegisterCount(),
-                newInstructions, method.getImplementation().getTryBlocks(),
-                method.getImplementation().getDebugItems())
+            method.getAnnotations(), Collections.emptySet(), mi
         );
     }
 }

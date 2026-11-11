@@ -40,13 +40,13 @@ jobs:
           # 2. Compile Patcher.java
           javac -cp "$ANDROID_JAR:libs/dexlib2.jar:libs/util.jar:libs/guava.jar" src/com/zgameprops/Patcher.java
           
-          # 3. Convert to DEX using D8, bundling all dependencies into patcher.jar
+          # 3. Convert to DEX using D8. Use globs to include nested classes.
           java -cp libs/r8.jar com.android.tools.r8.D8 \
             --lib "$ANDROID_JAR" \
             --min-api 26 \
             --output patcher.jar \
-            src/com/zgameprops/Patcher.class \
-            src/io/mesalabs/unica/GamesPropsUtils.class \
+            src/com/zgameprops/*.class \
+            src/io/mesalabs/unica/*.class \
             libs/dexlib2.jar \
             libs/util.jar \
             libs/guava.jar

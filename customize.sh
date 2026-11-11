@@ -45,21 +45,14 @@ chmod 777 "$PATCHER_JAR" "$WORK_JAR"
 log_msg "- Starting app_process..."
 export CLASSPATH="$PATCHER_JAR"
 
-# Run without -J memory limit first to see if it's the flag crashing it.
-# Also redirect all output directly to the log.
-app_process /system/bin com.zgameprops.Patcher "$WORK_JAR" "$WORK_JAR_OUT" >> "$LOG_FILE" 2>&1
+# ART handles -Xmx directly.
+app_process -Xmx1024m /system/bin com.zgameprops.Patcher "$WORK_JAR" "$WORK_JAR_OUT" >> "$LOG_FILE" 2>&1
 PATCH_RESULT=$?
 
 if [ $PATCH_RESULT -ne 0 ]; then
     log_msg "! Patching failed with exit code $PATCH_RESULT."
-    
-    # Dump SELinux denials to see if APatch is blocking us
     log_msg "- Dumping SELinux avc denials..."
     dmesg | grep avc >> "$LOG_FILE" 2>&1
-    
-    # Dump logcat for our process if it crashed
-    logcat -d -s zGameProps >> "$LOG_FILE" 2>&1
-    
     rm -f "$PATCHER_JAR" "$WORK_JAR" "$WORK_JAR_OUT"
     abort "! Aborted to prevent bootloop."
 fi
