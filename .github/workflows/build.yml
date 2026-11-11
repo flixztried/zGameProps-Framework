@@ -19,13 +19,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Download Dependencies
+      - name: Download Dependencies (dexlib2 3.0.9)
         run: |
           mkdir -p libs
           curl -sL https://dl.google.com/dl/android/maven2/com/android/tools/smali/smali-dexlib2/3.0.9/smali-dexlib2-3.0.9.jar -o libs/smali-dexlib2.jar
           curl -sL https://dl.google.com/dl/android/maven2/com/android/tools/smali/smali-util/3.0.9/smali-util-3.0.9.jar -o libs/smali-util.jar
           curl -sL https://repo1.maven.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar -o libs/guava.jar
           curl -sL https://storage.googleapis.com/r8-releases/raw/8.5.35/r8.jar -o libs/r8.jar
+          echo "Downloaded jar sizes:"
+          ls -la libs/
 
       - name: Compile Patcher and Dependencies
         run: |
@@ -47,9 +49,9 @@ jobs:
             libs/smali-util.jar \
             libs/guava.jar
 
-      - name: Smoke Test (Verify Classpath)
+      - name: Smoke Test
         run: |
-          java -cp patcher.jar com.zgameprops.Patcher || echo "Smoke test passed."
+          java -cp patcher.jar com.zgameprops.Patcher || echo "Smoke test passed (exit 1 expected)."
 
       - name: Prepare Module Directory
         run: |
@@ -61,8 +63,6 @@ jobs:
           cp customize.sh module/
           cp uninstall.sh module/
           cp post-fs-data.sh module/
-          
-          # Copy the pre-made installer files
           cp META-INF/com/google/android/update-binary module/META-INF/com/google/android/
           cp META-INF/com/google/android/updater-script module/META-INF/com/google/android/
           
