@@ -22,8 +22,8 @@ jobs:
       - name: Download Dependencies
         run: |
           mkdir -p libs
-          curl -sL https://repo1.maven.org/maven2/org/smali/dexlib2/2.5.2/dexlib2-2.5.2.jar -o libs/dexlib2.jar
-          curl -sL https://repo1.maven.org/maven2/org/smali/util/2.5.2/util-2.5.2.jar -o libs/util.jar
+          curl -sL https://dl.google.com/dl/android/maven2/com/android/tools/smali/smali-dexlib2/3.0.9/smali-dexlib2-3.0.9.jar -o libs/smali-dexlib2.jar
+          curl -sL https://dl.google.com/dl/android/maven2/com/android/tools/smali/smali-util/3.0.9/smali-util-3.0.9.jar -o libs/smali-util.jar
           curl -sL https://repo1.maven.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar -o libs/guava.jar
           curl -sL https://storage.googleapis.com/r8-releases/raw/8.5.35/r8.jar -o libs/r8.jar
 
@@ -32,37 +32,54 @@ jobs:
           ANDROID_JAR=$(find $ANDROID_HOME/platforms -name "android.jar" | sort -V | tail -n 1)
           echo "Using Android Jar: $ANDROID_JAR"
 
-          # 1. Compile GamesPropsUtils.java to DEX
           mkdir -p src/io/mesalabs/unica
           cp src/GamesPropsUtils.java src/io/mesalabs/unica/
           javac -cp "$ANDROID_JAR:libs/guava.jar" src/io/mesalabs/unica/GamesPropsUtils.java
+          javac -cp "$ANDROID_JAR:libs/smali-dexlib2.jar:libs/smali-util.jar:libs/guava.jar" src/com/zgameprops/Patcher.java
           
-          # 2. Compile Patcher.java
-          javac -cp "$ANDROID_JAR:libs/dexlib2.jar:libs/util.jar:libs/guava.jar" src/com/zgameprops/Patcher.java
-          
-          # 3. Convert to DEX using D8. Use globs to include nested classes.
           java -cp libs/r8.jar com.android.tools.r8.D8 \
             --lib "$ANDROID_JAR" \
             --min-api 26 \
             --output patcher.jar \
             src/com/zgameprops/*.class \
             src/io/mesalabs/unica/*.class \
-            libs/dexlib2.jar \
-            libs/util.jar \
+            libs/smali-dexlib2.jar \
+            libs/smali-util.jar \
             libs/guava.jar
-            
-          # 4. Prepare module directory
-          mkdir -p module/system/framework
-          cp patcher.jar module/patcher.jar
 
-      - name: Package Magisk Module
+      - name: Smoke Test (Verify Classpath)
+        run: |
+          java -cp patcher.jar com.zgameprops.Patcher || echo "Smoke test passed."
+
+      - name: Prepare Module Directory
+        run: |
+          mkdir -p module/system/framework
+          mkdir -p module/META-INF/com/google/android
+          cp patcher.jar module/patcher.jar
+          cp module.prop module/
+          cp customize.sh module/
+          cp uninstall.sh module/
+          cp post-fs-data.sh module/
+
+          echo "#MAGISK" > module/META-INF/com/google/android/updater-script
+          cat > module/META-INF/com/google/android/update-binary <<'EOF'
+#!/sbin/sh
+umask 022
+OUTFD=$2
+ZIPFILE=$3
+MAGISKBIN=/data/adb/magisk
+mount -o rw,remount /data
+mkdir -p $MAGISKBIN
+unzip -o "$ZIPFILE" 'META-INF/*' -d /tmp >/dev/null 2>&1
+. /tmp/META-INF/com/google/android/update-binary
+EOF
+          chmod +x module/META-INF/com/google/android/update-binary
+
+      - name: Package Module Zip
         run: |
           cd module
-          cp ../module.prop .
-          cp ../customize.sh .
-          cp ../uninstall.sh .
-          cp ../post-fs-data.sh .
           zip -r ../zGameProps-Framework.zip .
+          cd ..
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

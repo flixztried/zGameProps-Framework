@@ -1,28 +1,27 @@
 package com.zgameprops;
 
-import org.jf.dexlib2.AccessFlags;
-import org.jf.dexlib2.DexFileFactory;
-import org.jf.dexlib2.Opcode;
-import org.jf.dexlib2.Opcodes;
-import org.jf.dexlib2.base.reference.BaseTypeReference;
-import org.jf.dexlib2.builder.MutableMethodImplementation;
-import org.jf.dexlib2.builder.instruction.BuilderInstruction35c;
-import org.jf.dexlib2.builder.instruction.BuilderInstruction3rc;
-import org.jf.dexlib2.iface.ClassDef;
-import org.jf.dexlib2.iface.DexFile;
-import org.jf.dexlib2.iface.Field;
-import org.jf.dexlib2.iface.Method;
-import org.jf.dexlib2.immutable.ImmutableMethod;
-import org.jf.dexlib2.immutable.reference.ImmutableMethodReference;
-import org.jf.dexlib2.util.MethodUtil;
-import org.jf.dexlib2.writer.io.FileDataStore;
-import org.jf.dexlib2.writer.pool.DexPool;
+import com.android.tools.smali.dexlib2.AccessFlags;
+import com.android.tools.smali.dexlib2.DexFileFactory;
+import com.android.tools.smali.dexlib2.Opcode;
+import com.android.tools.smali.dexlib2.Opcodes;
+import com.android.tools.smali.dexlib2.base.reference.BaseTypeReference;
+import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation;
+import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction35c;
+import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction3rc;
+import com.android.tools.smali.dexlib2.iface.ClassDef;
+import com.android.tools.smali.dexlib2.iface.DexFile;
+import com.android.tools.smali.dexlib2.iface.Field;
+import com.android.tools.smali.dexlib2.iface.Method;
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod;
+import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference;
+import com.android.tools.smali.dexlib2.util.MethodUtil;
+import com.android.tools.smali.dexlib2.writer.io.FileDataStore;
+import com.android.tools.smali.dexlib2.writer.pool.DexPool;
 import com.google.common.collect.Iterables;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -34,28 +33,29 @@ import java.util.zip.ZipOutputStream;
 
 public class Patcher {
     public static void main(String[] args) {
-        if (args.length < 2) {
-            System.out.println("Usage: Patcher <input_jar> <output_jar>");
+        if (args.length < 3) {
+            System.out.println("Usage: Patcher <input_jar> <output_jar> <api_level>");
             System.exit(1);
         }
         String inputJarPath = args[0];
         String outputJarPath = args[1];
+        int apiLevel = Integer.parseInt(args[2]);
 
         try {
+            System.out.println("Using API level: " + apiLevel);
             File inputJar = new File(inputJarPath);
             File outputJar = new File(outputJarPath);
             File tempOutDex = new File(outputJar.getParentFile(), "temp_patched.dex");
 
-            // 1. Load the entire DexContainer (handles multi-dex)
-            org.jf.dexlib2.iface.MultiDexContainer<? extends DexFile> container = 
-                DexFileFactory.loadDexContainer(inputJar, Opcodes.forApi(34));
+            com.android.tools.smali.dexlib2.iface.MultiDexContainer<? extends DexFile> container = 
+                DexFileFactory.loadDexContainer(inputJar, Opcodes.forApi(apiLevel));
 
             String targetDexEntry = null;
             DexFile targetDexFile = null;
 
-            // 2. Find which dex file contains Instrumentation
+            // Find the specific DEX containing Instrumentation
             for (String entryName : container.getDexEntryNames()) {
-                org.jf.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = container.getEntry(entryName);
+                com.android.tools.smali.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = container.getEntry(entryName);
                 if (entry != null) {
                     for (ClassDef classDef : entry.getDexFile().getClasses()) {
                         if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
@@ -69,13 +69,16 @@ public class Patcher {
             }
 
             if (targetDexEntry == null) {
-                System.out.println("Instrumentation class not found!");
-                System.exit(1);
+                throw new RuntimeException("Instrumentation class not found in framework.jar!");
             }
+            System.out.println("Found Instrumentation in: " + targetDexEntry);
 
-            // 3. Re-pool the modified DEX
-            DexPool dexPool = new DexPool(Opcodes.forApi(34));
+            int originalClassCount = 0;
+            DexPool dexPool = new DexPool(Opcodes.forApi(apiLevel));
+            
+            // Only re-pool the target DEX
             for (ClassDef classDef : targetDexFile.getClasses()) {
+                originalClassCount++;
                 if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
                     dexPool.internClass(new PatchedClass(classDef));
                 } else {
@@ -83,17 +86,19 @@ public class Patcher {
                 }
             }
 
-            // Inject GamesPropsUtils from our own JAR
+            // Inject GamesPropsUtils
             String currentClassPath = System.getProperty("java.class.path");
             File currentJar = new File(currentClassPath);
-            org.jf.dexlib2.iface.MultiDexContainer<? extends DexFile> utilsContainer = 
-                DexFileFactory.loadDexContainer(currentJar, Opcodes.forApi(34));
+            com.android.tools.smali.dexlib2.iface.MultiDexContainer<? extends DexFile> utilsContainer = 
+                DexFileFactory.loadDexContainer(currentJar, Opcodes.forApi(apiLevel));
             
+            int injectedCount = 0;
             for (String entryName : utilsContainer.getDexEntryNames()) {
-                org.jf.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = utilsContainer.getEntry(entryName);
+                com.android.tools.smali.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = utilsContainer.getEntry(entryName);
                 for (ClassDef classDef : entry.getDexFile().getClasses()) {
                     if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils")) {
                         dexPool.internClass(classDef);
+                        injectedCount++;
                     }
                 }
             }
@@ -101,7 +106,21 @@ public class Patcher {
             FileDataStore outStore = new FileDataStore(tempOutDex);
             dexPool.writeTo(outStore);
 
-            // 4. Rebuild the JAR: Copy all original entries, replacing only the target DEX
+            // VALIDATION: Re-open the patched DEX and check class count
+            com.android.tools.smali.dexlib2.iface.DexFile patchedFile = 
+                DexFileFactory.loadDexFile(tempOutDex, Opcodes.forApi(apiLevel));
+            int finalClassCount = 0;
+            for (ClassDef ignored : patchedFile.getClasses()) {
+                finalClassCount++;
+            }
+
+            int expectedCount = originalClassCount + injectedCount;
+            if (finalClassCount != expectedCount) {
+                throw new RuntimeException("Validation failed! Expected " + expectedCount + " classes, but got " + finalClassCount);
+            }
+            System.out.println("Validation passed: " + finalClassCount + " classes present.");
+
+            // Rebuild the JAR
             ZipFile zipFile = new ZipFile(inputJar);
             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputJar));
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -111,10 +130,9 @@ public class Patcher {
                 zos.putNextEntry(new ZipEntry(entry.getName()));
                 
                 if (entry.getName().equals(targetDexEntry)) {
-                    // Write our patched DEX
                     java.nio.file.Files.copy(tempOutDex.toPath(), zos);
                 } else {
-                    // Copy original entry byte-for-byte
+                    // Copy other DEX files and resources byte for byte
                     InputStream is = zipFile.getInputStream(entry);
                     byte[] buffer = new byte[8192];
                     int len;
@@ -136,27 +154,19 @@ public class Patcher {
         }
     }
 
-    // Extending BaseTypeReference avoids boilerplate
     static class PatchedClass extends BaseTypeReference implements ClassDef {
         private final ClassDef base;
-
         PatchedClass(ClassDef base) { this.base = base; }
-
         @Override public String getType() { return base.getType(); }
         @Override public int getAccessFlags() { return base.getAccessFlags(); }
         @Override public String getSuperclass() { return base.getSuperclass(); }
         @Override public List<String> getInterfaces() { return base.getInterfaces(); }
         @Override public String getSourceFile() { return base.getSourceFile(); }
-        @Override public Set<? extends org.jf.dexlib2.iface.Annotation> getAnnotations() { return base.getAnnotations(); }
-        
-        @Override public Iterable<? extends Field> getFields() {
-            return Iterables.concat(getStaticFields(), getInstanceFields());
-        }
-
+        @Override public Set<? extends com.android.tools.smali.dexlib2.iface.Annotation> getAnnotations() { return base.getAnnotations(); }
+        @Override public Iterable<? extends Field> getFields() { return Iterables.concat(getStaticFields(), getInstanceFields()); }
         @Override public Iterable<? extends Field> getStaticFields() { return base.getStaticFields(); }
         @Override public Iterable<? extends Field> getInstanceFields() { return base.getInstanceFields(); }
         @Override public Iterable<? extends Method> getDirectMethods() { return base.getDirectMethods(); }
-
         @Override
         public Iterable<? extends Method> getVirtualMethods() {
             List<Method> newMethods = new ArrayList<>();
@@ -169,7 +179,6 @@ public class Patcher {
             }
             return newMethods;
         }
-
         @Override
         public Iterable<? extends Method> getMethods() {
             List<Method> newMethods = new ArrayList<>();
@@ -186,7 +195,6 @@ public class Patcher {
 
     private static Method createPatchedMethod(Method method) {
         if (method.getImplementation() == null) return method;
-
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
         
         int ctxIndex = -1;
@@ -197,13 +205,10 @@ public class Patcher {
                 break;
             }
         }
-
         if (ctxIndex == -1) return method;
 
         boolean isStatic = AccessFlags.STATIC.isSet(method.getAccessFlags());
         int paramRegCount = MethodUtil.getParameterRegisterCount(method);
-        
-        // Calculate absolute register dynamically
         int reg = mi.getRegisterCount() - paramRegCount + (isStatic ? 0 : 1) + ctxIndex;
 
         ImmutableMethodReference setProps = new ImmutableMethodReference(
@@ -211,13 +216,13 @@ public class Patcher {
             Collections.singletonList("Landroid/content/Context;"), "V"
         );
 
-        // Inject at index 0
         if (reg <= 15) {
             mi.addInstruction(0, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
         } else {
             mi.addInstruction(0, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
         }
 
+        // We use Collections.emptySet() for restrictions to avoid any lingering parsing bugs
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),
