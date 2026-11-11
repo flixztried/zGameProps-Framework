@@ -204,9 +204,11 @@ public class Patcher {
         }
         if (ctxIndex == -1) return method;
 
-        boolean isStatic = AccessFlags.STATIC.isSet(method.getAccessFlags());
+        // FIX: Removed the +1 for instance methods because getRegisterCount() already accounts for it.
         int paramRegCount = MethodUtil.getParameterRegisterCount(method);
-        int reg = mi.getRegisterCount() - paramRegCount + (isStatic ? 0 : 1) + ctxIndex;
+        int reg = mi.getRegisterCount() - paramRegCount + ctxIndex;
+
+        System.out.println("Injecting into " + method.getName() + " at register v" + reg);
 
         ImmutableMethodReference setProps = new ImmutableMethodReference(
             "Lio/mesalabs/unica/GamesPropsUtils;", "setProps",
