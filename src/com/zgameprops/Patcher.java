@@ -14,7 +14,6 @@ import com.android.tools.smali.dexlib2.iface.Field;
 import com.android.tools.smali.dexlib2.iface.Method;
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod;
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference;
-import com.android.tools.smali.dexlib2.util.MethodUtil;
 import com.android.tools.smali.dexlib2.writer.io.FileDataStore;
 import com.android.tools.smali.dexlib2.writer.pool.DexPool;
 import com.google.common.collect.Iterables;
@@ -94,7 +93,7 @@ public class Patcher {
             FileDataStore outStore = new FileDataStore(tempOutDex);
             dexPool.writeTo(outStore);
 
-            // VALIDATION: Re-open output and check class count
+            // VALIDATION
             com.android.tools.smali.dexlib2.iface.DexFile patchedFile = DexFileFactory.loadDexFile(tempOutDex, Opcodes.forApi(apiLevel));
             int patchedClassCount = 0;
             for (ClassDef ignored : patchedFile.getClasses()) patchedClassCount++;
@@ -106,10 +105,21 @@ public class Patcher {
 
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
-                // Preserve original compression method and metadata
                 ZipEntry newEntry = new ZipEntry(entry.getName());
-                newEntry.setMethod(entry.getMethod());
                 newEntry.setTime(entry.getTime());
+
+                if (entry.getName().equals(targetDexEntry)) {
+                    // Force deflate for our modified dex so we don't need to pre-calculate size/crc
+                    newEntry.setMethod(ZipEntry.DEFLATED);
+                } else {
+                    newEntry.setMethod(entry.getMethod());
+                    if (newEntry.getMethod() == ZipEntry.STORED) {
+                        newEntry.setSize(entry.getSize());
+                        newEntry.setCompressedSize(entry.getCompressedSize());
+                        newEntry.setCrc(entry.getCrc());
+                    }
+                }
+
                 zos.putNextEntry(newEntry);
                 
                 if (entry.getName().equals(targetDexEntry)) {
@@ -148,24 +158,24 @@ public class Patcher {
         @Override public Iterable<? extends Field> getFields() { return Iterables.concat(getStaticFields(), getInstanceFields()); }
         @Override public Iterable<? extends Field> getStaticFields() { return base.getStaticFields(); }
         @Override public Iterable<? extends Field> getInstanceFields() { return base.getInstanceFields(); }
-        @Override public Iterable<? extends Method> getDirectMethods() { 
-            return patchMethods(base.getDirectMethods()); 
-        }
-        @Override public Iterable<? extends Method> getVirtualMethods() { 
-            return patchMethods(base.getVirtualMethods()); 
-        }
-        @Override public Iterable<? extends Method> getMethods() { 
-            return patchMethods(base.getMethods()); 
-        }
+        @Override public Iterable<? extends Method> getDirectMethods() { return patchMethods(base.getDirectMethods()); }
+        @Override public Iterable<? extends Method> getVirtualMethods() { return patchMethods(base.getVirtualMethods()); }
+        @Override public Iterable<? extends Method> getMethods() { return patchMethods(base.getMethods()); }
 
         private Iterable<? extends Method> patchMethods(Iterable<? extends Method> methods) {
             List<Method> newMethods = new ArrayList<>();
             for (Method m : methods) {
-                if (m.getName().equals("newApplication") && m.getParameterTypes().get(m.getParameterTypes().size() - 1).toString().equals("Landroid/content/Context;")) {
-                    newMethods.add(createPatchedMethod(m));
-                } else {
-                    newMethods.add(m);
+                if (m.getName().equals("newApplication")) {
+                    boolean hasContext = false;
+                    for (CharSequence param : m.getParameterTypes()) {
+                        if (param.toString().equals("Landroid/content/Context;")) hasContext = true;
+                    }
+                    if (hasContext) {
+                        newMethods.add(createPatchedMethod(m));
+                        continue;
+                    }
                 }
+                newMethods.add(m);
             }
             return newMethods;
         }
@@ -175,19 +185,8 @@ public class Patcher {
         if (method.getImplementation() == null) return method;
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
         
-        // Calculate the register holding Context
-        int ctxIndex = -1;
-        List<? extends CharSequence> paramTypes = method.getParameterTypes();
-        for (int i = 0; i < paramTypes.size(); i++) {
-            if (paramTypes.get(i).toString().equals("Landroid/content/Context;")) {
-                ctxIndex = i;
-                break;
-            }
-        }
-        if (ctxIndex == -1) return method;
-
-        int paramRegCount = MethodUtil.getParameterRegisterCount(method);
-        int reg = mi.getRegisterCount() - paramRegCount + (AccessFlags.STATIC.isSet(method.getAccessFlags()) ? 0 : 1) + ctxIndex;
+        // Since Context is the last parameter, it lives in the highest register
+        int reg = mi.getRegisterCount() - 1;
 
         System.out.println("Injecting into " + method.getName() + " at index 0 (register v" + reg + ")");
 
@@ -196,7 +195,6 @@ public class Patcher {
             Collections.singletonList("Landroid/content/Context;"), "V"
         );
 
-        // Inject at index 0 (start of method) to guarantee parameter registers are intact
         if (reg <= 15) {
             mi.addInstruction(0, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
         } else {
