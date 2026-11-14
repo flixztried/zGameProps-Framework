@@ -170,10 +170,11 @@ public class Patcher {
         if (method.getImplementation() == null) return method;
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
         
-        // Context is ALWAYS the last parameter in newApplication.
+        // FIX: Context is ALWAYS the last parameter.
+        // Register count minus 1 gives us the absolute register index for Context.
         int reg = mi.getRegisterCount() - 1;
 
-        // Find the last RETURN_OBJECT to inject right before it.
+        // FIX: Inject right before the return statement to avoid breaking try/catch blocks
         int returnIndex = mi.getInstructions().size();
         for (int i = mi.getInstructions().size() - 1; i >= 0; i--) {
             if (mi.getInstructions().get(i).getOpcode() == Opcode.RETURN_OBJECT) {
@@ -182,7 +183,7 @@ public class Patcher {
             }
         }
 
-        System.out.println("Injecting into " + method.getName() + " at register v" + reg + " before index " + returnIndex);
+        System.out.println("Injecting into " + method.getName() + " at register v" + reg + " before instruction index " + returnIndex);
 
         ImmutableMethodReference setProps = new ImmutableMethodReference(
             "Lio/mesalabs/unica/GamesPropsUtils;", "setProps",
@@ -195,7 +196,7 @@ public class Patcher {
             mi.addInstruction(returnIndex, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
         }
 
-        // Preserve hidden API flags to pass ART verifier
+        // FIX: Use method.getHiddenApiRestrictions() instead of Collections.emptySet()
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),
