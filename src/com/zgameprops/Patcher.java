@@ -31,6 +31,9 @@ import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 public class Patcher {
+    // SET THIS TO TRUE TO TEST DEXLIB2 REWRITE WITHOUT INJECTING
+    private static final boolean SKIP_INJECTION = true; 
+
     public static void main(String[] args) {
         if (args.length < 3) {
             System.out.println("Usage: Patcher <input_jar> <output_jar> <api_level>");
@@ -69,7 +72,7 @@ public class Patcher {
 
             DexPool dexPool = new DexPool(Opcodes.forApi(apiLevel));
             for (ClassDef classDef : targetDexFile.getClasses()) {
-                if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
+                if (classDef.getType().equals("Landroid/app/Instrumentation;") && !SKIP_INJECTION) {
                     dexPool.internClass(new PatchedClass(classDef));
                 } else {
                     dexPool.internClass(classDef);
@@ -84,7 +87,7 @@ public class Patcher {
             for (String entryName : utilsContainer.getDexEntryNames()) {
                 com.android.tools.smali.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = utilsContainer.getEntry(entryName);
                 for (ClassDef classDef : entry.getDexFile().getClasses()) {
-                    if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils")) {
+                    if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils") && !SKIP_INJECTION) {
                         dexPool.internClass(classDef);
                     }
                 }
@@ -131,7 +134,7 @@ public class Patcher {
             zos.close();
             zipFile.close();
             tempOutDex.delete();
-            System.out.println("Patch successful.");
+            System.out.println("Patch successful (Skip Injection: " + SKIP_INJECTION + ")");
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -177,22 +180,16 @@ public class Patcher {
     private static Method createPatchedMethod(Method method) {
         if (method.getImplementation() == null) return method;
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
-        
         int reg = mi.getRegisterCount() - 1;
-
-        System.out.println("Injecting into " + method.getName() + " at index 0 (register v" + reg + ")");
-
         ImmutableMethodReference setProps = new ImmutableMethodReference(
             "Lio/mesalabs/unica/GamesPropsUtils;", "setProps",
             Collections.singletonList("Landroid/content/Context;"), "V"
         );
-
         if (reg <= 15) {
             mi.addInstruction(0, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
         } else {
             mi.addInstruction(0, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
         }
-
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),
