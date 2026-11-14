@@ -31,8 +31,8 @@ import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 public class Patcher {
-    // SET THIS TO TRUE TO TEST DEXLIB2 REWRITE WITHOUT INJECTING
-    private static final boolean SKIP_INJECTION = true; 
+    // TEST 1: Class added, NO call injected
+    private static final boolean SKIP_METHOD_INJECTION = true; 
 
     public static void main(String[] args) {
         if (args.length < 3) {
@@ -72,13 +72,14 @@ public class Patcher {
 
             DexPool dexPool = new DexPool(Opcodes.forApi(apiLevel));
             for (ClassDef classDef : targetDexFile.getClasses()) {
-                if (classDef.getType().equals("Landroid/app/Instrumentation;") && !SKIP_INJECTION) {
+                if (classDef.getType().equals("Landroid/app/Instrumentation;") && !SKIP_METHOD_INJECTION) {
                     dexPool.internClass(new PatchedClass(classDef));
                 } else {
                     dexPool.internClass(classDef);
                 }
             }
 
+            // ALWAYS add the GamesPropsUtils class, regardless of SKIP_METHOD_INJECTION
             String currentClassPath = System.getProperty("java.class.path");
             File currentJar = new File(currentClassPath);
             com.android.tools.smali.dexlib2.iface.MultiDexContainer<? extends DexFile> utilsContainer = 
@@ -87,8 +88,9 @@ public class Patcher {
             for (String entryName : utilsContainer.getDexEntryNames()) {
                 com.android.tools.smali.dexlib2.iface.MultiDexContainer.DexEntry<? extends DexFile> entry = utilsContainer.getEntry(entryName);
                 for (ClassDef classDef : entry.getDexFile().getClasses()) {
-                    if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils") && !SKIP_INJECTION) {
+                    if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils")) {
                         dexPool.internClass(classDef);
+                        System.out.println("Added class: " + classDef.getType());
                     }
                 }
             }
@@ -134,7 +136,7 @@ public class Patcher {
             zos.close();
             zipFile.close();
             tempOutDex.delete();
-            System.out.println("Patch successful (Skip Injection: " + SKIP_INJECTION + ")");
+            System.out.println("Patch successful.");
 
         } catch (Exception e) {
             e.printStackTrace();
