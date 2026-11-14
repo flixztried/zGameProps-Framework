@@ -42,7 +42,6 @@ public class Patcher {
         int apiLevel = Integer.parseInt(args[2]);
 
         try {
-            System.out.println("Using API level: " + apiLevel);
             File inputJar = new File(inputJarPath);
             File outputJar = new File(outputJarPath);
             File tempOutDex = new File(outputJar.getParentFile(), "temp_patched.dex");
@@ -95,13 +94,23 @@ public class Patcher {
             FileDataStore outStore = new FileDataStore(tempOutDex);
             dexPool.writeTo(outStore);
 
+            // VALIDATION: Re-open output and check class count
+            com.android.tools.smali.dexlib2.iface.DexFile patchedFile = DexFileFactory.loadDexFile(tempOutDex, Opcodes.forApi(apiLevel));
+            int patchedClassCount = 0;
+            for (ClassDef ignored : patchedFile.getClasses()) patchedClassCount++;
+            System.out.println("Validation: " + patchedClassCount + " classes written.");
+
             ZipFile zipFile = new ZipFile(inputJar);
             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputJar));
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
 
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
-                zos.putNextEntry(new ZipEntry(entry.getName()));
+                // Preserve original compression method and metadata
+                ZipEntry newEntry = new ZipEntry(entry.getName());
+                newEntry.setMethod(entry.getMethod());
+                newEntry.setTime(entry.getTime());
+                zos.putNextEntry(newEntry);
                 
                 if (entry.getName().equals(targetDexEntry)) {
                     java.nio.file.Files.copy(tempOutDex.toPath(), zos);
@@ -139,24 +148,20 @@ public class Patcher {
         @Override public Iterable<? extends Field> getFields() { return Iterables.concat(getStaticFields(), getInstanceFields()); }
         @Override public Iterable<? extends Field> getStaticFields() { return base.getStaticFields(); }
         @Override public Iterable<? extends Field> getInstanceFields() { return base.getInstanceFields(); }
-        @Override public Iterable<? extends Method> getDirectMethods() { return base.getDirectMethods(); }
-        @Override
-        public Iterable<? extends Method> getVirtualMethods() {
-            List<Method> newMethods = new ArrayList<>();
-            for (Method m : base.getVirtualMethods()) {
-                if (m.getName().equals("newApplication")) {
-                    newMethods.add(createPatchedMethod(m));
-                } else {
-                    newMethods.add(m);
-                }
-            }
-            return newMethods;
+        @Override public Iterable<? extends Method> getDirectMethods() { 
+            return patchMethods(base.getDirectMethods()); 
         }
-        @Override
-        public Iterable<? extends Method> getMethods() {
+        @Override public Iterable<? extends Method> getVirtualMethods() { 
+            return patchMethods(base.getVirtualMethods()); 
+        }
+        @Override public Iterable<? extends Method> getMethods() { 
+            return patchMethods(base.getMethods()); 
+        }
+
+        private Iterable<? extends Method> patchMethods(Iterable<? extends Method> methods) {
             List<Method> newMethods = new ArrayList<>();
-            for (Method m : base.getMethods()) {
-                if (m.getName().equals("newApplication")) {
+            for (Method m : methods) {
+                if (m.getName().equals("newApplication") && m.getParameterTypes().get(m.getParameterTypes().size() - 1).toString().equals("Landroid/content/Context;")) {
                     newMethods.add(createPatchedMethod(m));
                 } else {
                     newMethods.add(m);
@@ -170,33 +175,34 @@ public class Patcher {
         if (method.getImplementation() == null) return method;
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
         
-        // FIX: Context is ALWAYS the last parameter.
-        // Register count minus 1 gives us the absolute register index for Context.
-        int reg = mi.getRegisterCount() - 1;
-
-        // FIX: Inject right before the return statement to avoid breaking try/catch blocks
-        int returnIndex = mi.getInstructions().size();
-        for (int i = mi.getInstructions().size() - 1; i >= 0; i--) {
-            if (mi.getInstructions().get(i).getOpcode() == Opcode.RETURN_OBJECT) {
-                returnIndex = i;
+        // Calculate the register holding Context
+        int ctxIndex = -1;
+        List<? extends CharSequence> paramTypes = method.getParameterTypes();
+        for (int i = 0; i < paramTypes.size(); i++) {
+            if (paramTypes.get(i).toString().equals("Landroid/content/Context;")) {
+                ctxIndex = i;
                 break;
             }
         }
+        if (ctxIndex == -1) return method;
 
-        System.out.println("Injecting into " + method.getName() + " at register v" + reg + " before instruction index " + returnIndex);
+        int paramRegCount = MethodUtil.getParameterRegisterCount(method);
+        int reg = mi.getRegisterCount() - paramRegCount + (AccessFlags.STATIC.isSet(method.getAccessFlags()) ? 0 : 1) + ctxIndex;
+
+        System.out.println("Injecting into " + method.getName() + " at index 0 (register v" + reg + ")");
 
         ImmutableMethodReference setProps = new ImmutableMethodReference(
             "Lio/mesalabs/unica/GamesPropsUtils;", "setProps",
             Collections.singletonList("Landroid/content/Context;"), "V"
         );
 
+        // Inject at index 0 (start of method) to guarantee parameter registers are intact
         if (reg <= 15) {
-            mi.addInstruction(returnIndex, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
+            mi.addInstruction(0, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
         } else {
-            mi.addInstruction(returnIndex, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
+            mi.addInstruction(0, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
         }
 
-        // FIX: Use method.getHiddenApiRestrictions() instead of Collections.emptySet()
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),
