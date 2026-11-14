@@ -93,12 +93,6 @@ public class Patcher {
             FileDataStore outStore = new FileDataStore(tempOutDex);
             dexPool.writeTo(outStore);
 
-            // VALIDATION
-            com.android.tools.smali.dexlib2.iface.DexFile patchedFile = DexFileFactory.loadDexFile(tempOutDex, Opcodes.forApi(apiLevel));
-            int patchedClassCount = 0;
-            for (ClassDef ignored : patchedFile.getClasses()) patchedClassCount++;
-            System.out.println("Validation: " + patchedClassCount + " classes written.");
-
             ZipFile zipFile = new ZipFile(inputJar);
             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputJar));
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -109,7 +103,6 @@ public class Patcher {
                 newEntry.setTime(entry.getTime());
 
                 if (entry.getName().equals(targetDexEntry)) {
-                    // Force deflate for our modified dex so we don't need to pre-calculate size/crc
                     newEntry.setMethod(ZipEntry.DEFLATED);
                 } else {
                     newEntry.setMethod(entry.getMethod());
@@ -185,7 +178,6 @@ public class Patcher {
         if (method.getImplementation() == null) return method;
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
         
-        // Since Context is the last parameter, it lives in the highest register
         int reg = mi.getRegisterCount() - 1;
 
         System.out.println("Injecting into " + method.getName() + " at index 0 (register v" + reg + ")");
