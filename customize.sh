@@ -6,7 +6,6 @@ FALLBACK_LOG="/data/local/tmp/zGameProps_install_log.txt"
 
 echo "--- zGameProps Installation Log ---" > "$LOG_FILE" 2>/dev/null || echo "" > "$FALLBACK_LOG"
 echo "Date: $(date)" >> "$LOG_FILE" 2>/dev/null || echo "Date: $(date)" >> "$FALLBACK_LOG"
-echo "Patcher Version: 1.0.1 (dexlib2 3.0.9)" >> "$LOG_FILE" 2>/dev/null || echo "Patcher Version: 1.0.1 (dexlib2 3.0.9)" >> "$FALLBACK_LOG"
 
 log_msg() {
     ui_print "$1"
@@ -25,53 +24,42 @@ API_LEVEL=$(getprop ro.build.version.sdk)
 log_msg "- zGameProps Framework Patcher"
 log_msg "- Device API Level: $API_LEVEL"
 
+# --- Hybrid Mount Blacklist ---
+HM_CONFIG="/data/adb/hybrid-mount/config.toml"
+if [ -f "$HM_CONFIG" ]; then
+    log_msg "- Blacklisting zGameProps-Framework from Hybrid Mount..."
+    if ! grep -q "\[rules.zgameprops-framework\]" "$HM_CONFIG"; then
+        echo -e "\n[rules.zgameprops-framework]\ndisabled = true" >> "$HM_CONFIG"
+        log_msg "  Rule added to Hybrid Mount."
+    else
+        log_msg "  Rule already exists in Hybrid Mount."
+    fi
+fi
+
 if [ ! -f "$MODPATH/patcher.jar" ]; then
     log_msg "! patcher.jar missing."
     abort "! patcher.jar missing."
 fi
-
-# Detect if old module is still active
-if [ -d "/data/adb/modules/zGameProps-Framework" ] && [ ! -f "/data/adb/modules/zGameProps-Framework/disable" ]; then
-    log_msg "! WARNING: Previous zGameProps-Framework detected."
-    log_msg "! The current framework.jar is likely ALREADY PATCHED."
-    log_msg "! Recommend: uninstall old module, reboot, then reflash."
-fi
-
-# Diagnostics: framework.jar structure
-log_msg "- Inspecting stock framework.jar..."
-unzip -l "$FRAMEWORK_JAR" 2>/dev/null | grep -E '\.dex' >> "$LOG_FILE" 2>/dev/null || \
-    unzip -l "$FRAMEWORK_JAR" 2>/dev/null | grep -E '\.dex' >> "$FALLBACK_LOG" 2>/dev/null
 
 # Determine source jar (prefer backup if it exists and differs from current)
 PATCH_SOURCE="$FRAMEWORK_JAR"
 mkdir -p "$BACKUP_DIR"
 
 if [ -f "$BACKUP_JAR" ]; then
-    log_msg "- Backup found. Comparing hashes..."
     SRC_HASH=$(sha256sum "$FRAMEWORK_JAR" 2>/dev/null | cut -d' ' -f1)
     BAK_HASH=$(sha256sum "$BACKUP_JAR" 2>/dev/null | cut -d' ' -f1)
-    log_msg "  Current: $SRC_HASH"
-    log_msg "  Backup:  $BAK_HASH"
+    log_msg "- Current: $SRC_HASH"
+    log_msg "- Backup:  $BAK_HASH"
     
     if [ "$SRC_HASH" != "$BAK_HASH" ]; then
-        log_msg "- Current framework.jar differs from backup (overlay active)."
-        log_msg "- Using BACKUP as patch source (guaranteed stock)."
+        log_msg "- Current framework differs from backup. Using BACKUP (stock)."
         PATCH_SOURCE="$BACKUP_JAR"
     else
-        log_msg "- Backup matches current. Using current as source."
+        log_msg "- Backup matches current. Using current."
     fi
 else
     log_msg "- Creating initial backup from current framework.jar."
     cp "$FRAMEWORK_JAR" "$BACKUP_JAR"
-fi
-
-# Sanity check the source
-SRC_SIZE=$(ls -l "$PATCH_SOURCE" | awk '{print $5}')
-log_msg "- Patch source: $PATCH_SOURCE ($SRC_SIZE bytes)"
-
-if [ "$SRC_SIZE" -lt 1000000 ]; then
-    log_msg "! Source jar suspiciously small. Aborting."
-    abort "! Source jar size invalid."
 fi
 
 log_msg "- Preparing environment..."
@@ -88,12 +76,11 @@ PATCH_RESULT=$?
 
 if [ $PATCH_RESULT -ne 0 ]; then
     log_msg "! Patching failed with exit code $PATCH_RESULT."
-    log_msg "- Check $LOG_FILE for full stack trace."
     rm -f "$PATCHER_JAR" "$WORK_JAR" "$WORK_JAR_OUT"
     abort "! Aborted to prevent bootloop."
 fi
 
 log_msg "- Patching successful!"
-log_msg "- First boot will be slow (ART cache rebuild)."
+log_msg "- IMPORTANT: If you bootloop, clear Dalvik cache via recovery/ADB!"
 mv "$WORK_JAR_OUT" "$OUT_DIR/framework.jar"
 rm -f "$PATCHER_JAR" "$WORK_JAR"

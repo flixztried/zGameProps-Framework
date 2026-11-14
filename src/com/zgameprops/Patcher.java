@@ -170,11 +170,19 @@ public class Patcher {
         if (method.getImplementation() == null) return method;
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
         
-        // FIX: Context is ALWAYS the last parameter in newApplication.
-        // Register count minus 1 gives us the absolute register index for Context.
+        // Context is ALWAYS the last parameter in newApplication.
         int reg = mi.getRegisterCount() - 1;
 
-        System.out.println("Injecting into " + method.getName() + " at register v" + reg);
+        // Find the last RETURN_OBJECT to inject right before it.
+        int returnIndex = mi.getInstructions().size();
+        for (int i = mi.getInstructions().size() - 1; i >= 0; i--) {
+            if (mi.getInstructions().get(i).getOpcode() == Opcode.RETURN_OBJECT) {
+                returnIndex = i;
+                break;
+            }
+        }
+
+        System.out.println("Injecting into " + method.getName() + " at register v" + reg + " before index " + returnIndex);
 
         ImmutableMethodReference setProps = new ImmutableMethodReference(
             "Lio/mesalabs/unica/GamesPropsUtils;", "setProps",
@@ -182,15 +190,16 @@ public class Patcher {
         );
 
         if (reg <= 15) {
-            mi.addInstruction(0, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
+            mi.addInstruction(returnIndex, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
         } else {
-            mi.addInstruction(0, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
+            mi.addInstruction(returnIndex, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
         }
 
+        // Preserve hidden API flags to pass ART verifier
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),
-            method.getAnnotations(), Collections.emptySet(), mi
+            method.getAnnotations(), method.getHiddenApiRestrictions(), mi
         );
     }
 }
