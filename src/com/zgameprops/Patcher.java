@@ -31,9 +31,6 @@ import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 public class Patcher {
-    // TEST 1: Class added, NO call injected
-    private static final boolean SKIP_METHOD_INJECTION = true; 
-
     public static void main(String[] args) {
         if (args.length < 3) {
             System.out.println("Usage: Patcher <input_jar> <output_jar> <api_level>");
@@ -72,14 +69,13 @@ public class Patcher {
 
             DexPool dexPool = new DexPool(Opcodes.forApi(apiLevel));
             for (ClassDef classDef : targetDexFile.getClasses()) {
-                if (classDef.getType().equals("Landroid/app/Instrumentation;") && !SKIP_METHOD_INJECTION) {
+                if (classDef.getType().equals("Landroid/app/Instrumentation;")) {
                     dexPool.internClass(new PatchedClass(classDef));
                 } else {
                     dexPool.internClass(classDef);
                 }
             }
 
-            // ALWAYS add the GamesPropsUtils class, regardless of SKIP_METHOD_INJECTION
             String currentClassPath = System.getProperty("java.class.path");
             File currentJar = new File(currentClassPath);
             com.android.tools.smali.dexlib2.iface.MultiDexContainer<? extends DexFile> utilsContainer = 
@@ -90,7 +86,6 @@ public class Patcher {
                 for (ClassDef classDef : entry.getDexFile().getClasses()) {
                     if (classDef.getType().startsWith("Lio/mesalabs/unica/GamesPropsUtils")) {
                         dexPool.internClass(classDef);
-                        System.out.println("Added class: " + classDef.getType());
                     }
                 }
             }
@@ -182,16 +177,43 @@ public class Patcher {
     private static Method createPatchedMethod(Method method) {
         if (method.getImplementation() == null) return method;
         MutableMethodImplementation mi = new MutableMethodImplementation(method.getImplementation());
-        int reg = mi.getRegisterCount() - 1;
+        
+        // Calculate the register holding Context
+        int ctxIndex = -1;
+        List<? extends CharSequence> paramTypes = method.getParameterTypes();
+        for (int i = 0; i < paramTypes.size(); i++) {
+            if (paramTypes.get(i).toString().equals("Landroid/content/Context;")) {
+                ctxIndex = i;
+                break;
+            }
+        }
+        if (ctxIndex == -1) return method;
+
+        int paramRegCount = com.android.tools.smali.dexlib2.util.MethodUtil.getParameterRegisterCount(method);
+        int reg = mi.getRegisterCount() - paramRegCount + (AccessFlags.STATIC.isSet(method.getAccessFlags()) ? 0 : 1) + ctxIndex;
+
+        // Find the last RETURN_OBJECT to inject right before it.
+        int returnIndex = mi.getInstructions().size();
+        for (int i = mi.getInstructions().size() - 1; i >= 0; i--) {
+            if (mi.getInstructions().get(i).getOpcode() == Opcode.RETURN_OBJECT) {
+                returnIndex = i;
+                break;
+            }
+        }
+
+        System.out.println("Injecting into " + method.getName() + " before return at register v" + reg);
+
         ImmutableMethodReference setProps = new ImmutableMethodReference(
             "Lio/mesalabs/unica/GamesPropsUtils;", "setProps",
             Collections.singletonList("Landroid/content/Context;"), "V"
         );
+
         if (reg <= 15) {
-            mi.addInstruction(0, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
+            mi.addInstruction(returnIndex, new BuilderInstruction35c(Opcode.INVOKE_STATIC, 1, reg, 0, 0, 0, 0, setProps));
         } else {
-            mi.addInstruction(0, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
+            mi.addInstruction(returnIndex, new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE, reg, 1, setProps));
         }
+
         return new ImmutableMethod(
             method.getDefiningClass(), method.getName(), method.getParameters(),
             method.getReturnType(), method.getAccessFlags(),

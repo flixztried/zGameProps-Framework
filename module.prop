@@ -1,6 +1,6 @@
 id=zgameprops-framework
 name=zGameProps Framework Patcher
-version=1.0.0-test-class-only
-versionCode=98
+version=2.0.0
+versionCode=100
 author=flixztried
-description=TEST 1: Class added, NO injection.
+description=Systemless framework.jar patcher.
