@@ -3,8 +3,10 @@ name: Build zGameProps Framework Patcher
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -33,7 +35,6 @@ jobs:
         run: |
           ANDROID_JAR=$(find $ANDROID_HOME/platforms -name "android.jar" | sort -V | tail -n 1)
           echo "Using Android Jar: $ANDROID_JAR"
-
           mkdir -p src/io/mesalabs/unica
           cp src/GamesPropsUtils.java src/io/mesalabs/unica/
           javac -cp "$ANDROID_JAR:libs/guava.jar" src/io/mesalabs/unica/GamesPropsUtils.java
@@ -63,19 +64,23 @@ jobs:
           cp customize.sh module/
           cp uninstall.sh module/
           cp post-fs-data.sh module/
+          cp service.sh module/
           cp META-INF/com/google/android/update-binary module/META-INF/com/google/android/
           cp META-INF/com/google/android/updater-script module/META-INF/com/google/android/
           
           chmod +x module/META-INF/com/google/android/update-binary
 
-      - name: Package Module Zip
+      - name: Package Module Zip (Flattened)
         run: |
           cd module
           zip -r ../zGameProps-Framework.zip .
           cd ..
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          name: zGameProps-Framework
-          path: zGameProps-Framework.zip
+          tag_name: build-${{ github.run_number }}
+          name: zGameProps Framework Build ${{ github.run_number }}
+          files: zGameProps-Framework.zip
+          draft: false
+          prerelease: false
