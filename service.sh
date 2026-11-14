@@ -1,4 +1,6 @@
 #!/system/bin/sh
+# Clean version - dex2oat removed
+
 MODDIR=${0%/*}
 LOG_FILE="/data/local/tmp/zGameProps_boot.log"
 
