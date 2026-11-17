@@ -14,7 +14,11 @@ jobs:
         with:
           gradle-version: '8.10'
       - name: Build Engine
-        run: gradle :engine:jar
+        run: gradle :engine:jvmJar --stacktrace --info
+      - name: Verify jar exists
+        run: |
+          ls -la engine/build/libs/
+          test -f engine/build/libs/engine.jar || (echo "ERROR: engine.jar not produced" && exit 1)
 
   module:
     needs: engine
@@ -29,7 +33,7 @@ jobs:
         with:
           gradle-version: '8.10'
       - name: Build engine JAR
-        run: gradle :engine:jar
+        run: gradle :engine:jvmJar
       - name: Package module
         run: |
           mkdir -p dist/system/framework

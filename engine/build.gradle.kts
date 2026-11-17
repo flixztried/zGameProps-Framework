@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
     kotlin("multiplatform") version "2.0.21"
     kotlin("plugin.serialization") version "2.0.21"
@@ -40,4 +42,8 @@ val compilePayload by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("generated-payload"))
 }
 
-tasks.named("jvmJar") { dependsOn(compilePayload) }
+// Force a predictable jar name: engine/build/libs/engine.jar
+tasks.named<Jar>("jvmJar") {
+    dependsOn(compilePayload)
+    archiveFileName.set("engine.jar")
+}
