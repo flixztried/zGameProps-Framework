@@ -8,9 +8,6 @@ kotlin {
         withJava()
         testRuns["test"].executionTask.configure { useJUnitPlatform() }
     }
-    androidTarget {
-        compilations.all { kotlinOptions { jvmTarget = "17" } }
-    }
 
     sourceSets {
         val commonMain by getting {
