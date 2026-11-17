@@ -18,6 +18,12 @@ abstract class BaseSmaliPatcher(val apiLevel: Int) : VersionPatcher {
 
         val smaliRoot = File(workspace, "smali").apply { mkdirs() }
         if (!SmaliRoundTrip.disassemble(probeDex, smaliRoot, apiLevel)) return PatchResult(false, "Disassembly failed")
+
+        // Inject the payload class into the smali tree
+        if (!injectPayloadClass(smaliRoot)) {
+            return PatchResult(false, "Payload class injection failed")
+        }
+
         if (!preProcess(smaliRoot)) return PatchResult(false, "Pre-processing failed")
         if (!injectProps(smaliRoot, profiles)) return PatchResult(false, "Injection failed")
 
@@ -26,5 +32,16 @@ abstract class BaseSmaliPatcher(val apiLevel: Int) : VersionPatcher {
         if (!SmaliRoundTrip.rebuildJar(File(stockJarPath), patchedDex, dexEntry, File(outputJarPath))) return PatchResult(false, "JAR rebuild failed")
 
         return PatchResult(true, "Patched successfully", outputJarPath)
+    }
+
+    private fun injectPayloadClass(smaliRoot: File): Boolean {
+        return try {
+            val resource = javaClass.classLoader?.getResourceAsStream("io/mesalabs/unica/GamesPropsUtils.smali")
+                ?: return false
+            val targetDir = File(smaliRoot, "io/mesalabs/unica").apply { mkdirs() }
+            val targetFile = File(targetDir, "GamesPropsUtils.smali")
+            resource.use { input -> targetFile.outputStream().use { input.copyTo(it) } }
+            true
+        } catch (t: Throwable) { false }
     }
 }

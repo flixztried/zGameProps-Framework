@@ -27,6 +27,7 @@ kotlin {
                 implementation("com.android.tools.smali:smali-util:3.0.9")
                 implementation("com.google.guava:guava:31.1-jre")
             }
+            resources.srcDir("$buildDir/generated-payload")
         }
         val jvmTest by getting {
             dependencies {
@@ -36,3 +37,16 @@ kotlin {
         }
     }
 }
+
+val compilePayload by tasks.registering {
+    val outDir = layout.buildDirectory.get().asFile.resolve("generated-payload")
+    doLast {
+        outDir.mkdirs()
+        val payloadSmali = rootProject.file("payload/smali")
+        if (payloadSmali.exists()) {
+            payloadSmali.copyRecursively(outDir, overwrite = true)
+        }
+    }
+}
+
+tasks.named("jvmJar") { dependsOn(compilePayload) }
