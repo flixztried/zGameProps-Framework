@@ -5,4 +5,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "zGameProps-Universal"
-include(":engine", ":app")
+include(":engine")
