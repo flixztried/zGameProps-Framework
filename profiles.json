@@ -1,0 +1,10 @@
+[
+  {
+    "name": "LenovoY700",
+    "packages": ["com.activision.callofduty.shooter", "com.garena.game.codm", "com.tencent.tmgp.kr.codm", "com.vng.codmvn"],
+    "brand": "Lenovo",
+    "device": "TB-9707F",
+    "manufacturer": "Lenovo",
+    "model": "Lenovo TB-9707F"
+  }
+]

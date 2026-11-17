@@ -1,0 +1,36 @@
+name: Build Universal Patcher
+on: [push, workflow_dispatch]
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build Engine
+        run: ./gradlew :engine:jar
+
+  module:
+    needs: engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: Build engine JAR
+        run: ./gradlew :engine:jar
+      - name: Package module
+        run: |
+          mkdir -p dist/system/framework
+          cp engine/build/libs/engine.jar dist/patcher.jar
+          cp module/module.prop module/customize.sh module/post-fs-data.sh module/service.sh module/uninstall.sh dist/
+          cp profiles.json dist/
+          cd dist && zip -r ../zGameProps-Universal.zip . && cd ..
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zGameProps-Universal
+          path: zGameProps-Universal.zip
